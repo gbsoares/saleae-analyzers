@@ -1,9 +1,6 @@
-# Saleae-Analyzers
-Collection of custom analyzers for Saleae's Logic 2
+# Serial Line Internet Protocol (SLIP)
 
-## [SLIP/IPv4 High Level Analyzer](./slip/README.md)
-
-A High Level Analyzer that decodes SLIP (Serial Line Internet Protocol) framed packets and automatically parses IPv4 headers from the payload.
+A High Level Analyzer that decodes SLIP framed packets and automatically parses IPv4 headers from the payload.
 
 **Features:**
 - Decodes SLIP framing (handles 0xC0 END markers and 0xDB escape sequences)
