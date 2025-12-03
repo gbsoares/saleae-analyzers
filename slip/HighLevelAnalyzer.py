@@ -203,7 +203,12 @@ class Hla(HighLevelAnalyzer):
           - Return a list of frames  -> [AnalyzerFrame(...), ...]
         """
         # We only care about data frames from Async Serial.
+        # Skip error frames (framing errors, parity errors, etc.)
         if frame.type != 'data':
+            return None
+        
+        # Check if this frame has an error flag
+        if frame.data.get('error'):
             return None
 
         out_frames = []
