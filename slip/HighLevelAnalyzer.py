@@ -58,11 +58,15 @@ class Hla(HighLevelAnalyzer):
     def __init__(self):
         # Called once when the HLA is created
         self._reset_state()
+        # Timing tracking (preserved across frames)
+        self.first_frame_start = None
+        self.last_frame_end = None
 
     def _reset_state(self):
         self.escape = False
         self.buffer = bytearray()
         self.frame_start_time = None
+        # Note: first_frame_start and last_frame_end are NOT reset here
 
     @staticmethod
     def _byte_spans(frame):
@@ -108,9 +112,8 @@ class Hla(HighLevelAnalyzer):
         if len(payload) < 20:
             return None, 'Too short for IPv4 header'
 
-        version_ihl = payload[0]
-        version = version_ihl >> 4
-        ihl = version_ihl & 0x0F
+        version = payload[0] >> 4
+        ihl = payload[0] & 0x0F
 
         if version != 4:
             return None, f'Unsupported IP version {version}'
@@ -137,6 +140,7 @@ class Hla(HighLevelAnalyzer):
         dst_port = None
         transport_payload = None
         
+        # Attempt to extract TCP/UDP ports and payload if applicable
         if protocol_num in (6, 17) and len(payload) >= header_length + 4:
             src_port = (payload[header_length] << 8) | payload[header_length + 1]
             dst_port = (payload[header_length + 2] << 8) | payload[header_length + 3]
@@ -148,7 +152,7 @@ class Hla(HighLevelAnalyzer):
                 udp_length = (payload[header_length + 4] << 8) | payload[header_length + 5]
                 transport_header_len = 8
                 if len(payload) >= header_length + transport_header_len:
-                    transport_payload = payload[header_length + transport_header_len:header_length + udp_length]
+                    transport_payload = payload[header_length + transport_header_len:total_length]
             elif protocol_num == 6:  # TCP
                 if len(payload) >= header_length + 12:
                     tcp_data_offset = (payload[header_length + 12] >> 4) * 4
@@ -178,11 +182,14 @@ class Hla(HighLevelAnalyzer):
         transport_payload = parsed.get('transport_payload')
         protocol_name = parsed.get('protocol')
         payload_length = parsed.get('payload_length')
+        abs_time = parsed.get('abs_time', '')
+        delta_time = parsed.get('delta_time', '')
 
         if not transport_payload or not src_port or not dst_port:
             return
-                
-        print(f"{src_ip}:{src_port} -> {dst_ip}:{dst_port} - {protocol_name} ({payload_length}): {transport_payload}")
+        
+        timing_info = f"[t={abs_time}s, dt={delta_time}s] " if abs_time else ""
+        print(f"{timing_info}{src_ip}:{src_port} -> {dst_ip}:{dst_port} - {protocol_name} ({payload_length}): {transport_payload}")
 
     def _emit_ipv4_frame(self, start_time, end_time):
         """Create an AnalyzerFrame for the decoded IPv4 packet."""
@@ -204,6 +211,26 @@ class Hla(HighLevelAnalyzer):
 
         if not parsed:
             return None
+        
+        # Calculate timing information
+        if self.first_frame_start is None:
+            self.first_frame_start = start
+        
+        # Absolute time since first frame
+        abs_time = float(start - self.first_frame_start)
+        
+        # Delta time from end of last frame to start of this frame
+        if self.last_frame_end is not None:
+            delta_time = float(start - self.last_frame_end)
+        else:
+            delta_time = 0.0
+        
+        # Update last frame end time
+        self.last_frame_end = end_time
+        
+        # Add timing info to parsed data
+        parsed['abs_time'] = f"{abs_time:.6f}"
+        parsed['delta_time'] = f"{delta_time:.6f}"
         
         # Print UDP/TCP payload to terminal
         self._print_transport_payload(parsed)
